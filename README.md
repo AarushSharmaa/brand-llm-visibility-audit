@@ -35,41 +35,14 @@ Runs 6 buyer-journey scenarios across one or more AI models, then produces:
 Most LLM audit tools run fixed prompts and count mentions. This one runs a four-stage agentic pipeline where each stage feeds the next.
 
 ```mermaid
-flowchart TD
-    A([Brand + Category + API Key]) --> B
-
-    subgraph S1["Stage 1 — Standard Audit"]
-        B[6 buyer-journey scenarios] --> C[Mention detection + position]
-        C --> D[Batch sentiment + claims enrichment]
-    end
-
-    D --> E{Probe Agent\ndecides}
-
-    subgraph S2["Stage 2 — Probe Agent"]
-        E -->|gaps found| F[Writes 1–3 targeted follow-up queries\nin natural language]
-        E -->|no gaps| G[Skip]
-    end
-
-    F --> H
-    G --> H
-
-    subgraph S3["Stage 3 — Diagnosis Agent"]
-        H[Structured JSON diagnosis] --> I[Per-action confidence scores 0–1\nActions under 0.6 flagged as hypotheses]
-        I --> J[Cross-model disagreement note\nwhen 2+ providers run]
-    end
-
-    J --> K
-
-    subgraph S4["Stage 4 — GEO Playbook"]
-        K[2–4 content briefs with titles,\ntarget queries, outlines, word counts] --> L[Quick wins + prioritized timeline]
-    end
-
-    L --> M([Audit complete — ready to act])
-
-    style S1 fill:#f0f9ff,stroke:#bae6fd
-    style S2 fill:#fefce8,stroke:#fde68a
-    style S3 fill:#f0fdf4,stroke:#bbf7d0
-    style S4 fill:#fdf4ff,stroke:#e9d5ff
+flowchart LR
+    A([Input]) --> B[Stage 1\nStandard Audit\n6 scenarios]
+    B --> C{Probe Agent\ngaps found?}
+    C -->|yes| D[Stage 2\n1–3 targeted\nfollow-up queries]
+    C -->|no| E[Stage 3\nDiagnosis\nconfidence-scored actions]
+    D --> E
+    E --> F[Stage 4\nGEO Playbook\ncontent briefs + timeline]
+    F --> G([Ready to act])
 ```
 
 **Stage 1: Standard audit.** Six fixed scenarios mapped to buyer-journey stages, regex mention detection, and a single batch LLM call for sentiment and claims across all results.
