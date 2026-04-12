@@ -135,7 +135,7 @@ if not run:
         <div class="empty-state-icon">◉</div>
         <h2 class="empty-state-title">Brand LLM Visibility Audit</h2>
         <p class="empty-state-sub">
-            See how your brand appears across AI models — ChatGPT, Gemini, Perplexity, and more. Configure your brand and API key in the sidebar, then run the audit.
+            See how your brand appears across AI models: ChatGPT, Gemini, Perplexity, and more. Configure your brand and API key in the sidebar, then run the audit.
         </p>
         <div class="empty-state-pills">
             <span class="empty-pill">Visibility score</span>
