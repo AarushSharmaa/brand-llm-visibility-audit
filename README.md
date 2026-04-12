@@ -32,21 +32,53 @@ Runs 6 buyer-journey scenarios across one or more AI models, then produces:
 
 ## How the analysis works
 
-Most LLM audit tools run fixed prompts and count mentions. This one runs a three-stage loop.
+Most LLM audit tools run fixed prompts and count mentions. This one runs a four-stage agentic pipeline where each stage feeds the next.
 
-**Stage 1: Standard audit.** Six fixed scenarios, regex mention detection, batch enrichment call for sentiment and claims.
+```mermaid
+flowchart TD
+    A([Brand + Category + API Key]) --> B
 
-**Stage 2: Probe agent.** After reviewing the six results, an LLM orchestrator decides whether to run 1 to 3 targeted follow-up queries. It reasons about what it found before choosing what to ask next:
-- Invisible brand: probes alternate buyer phrasings
-- Negative sentiment: surfaces that framing specifically
-- High scorer: tests niche segments and edge cases
-- Mixed results: targets the specific gaps
+    subgraph S1["Stage 1 — Standard Audit"]
+        B[6 buyer-journey scenarios] --> C[Mention detection + position]
+        C --> D[Batch sentiment + claims enrichment]
+    end
 
-The probe queries are not templated. The agent writes them in natural language based on your brand and category.
+    D --> E{Probe Agent\ndecides}
 
-**Stage 3: Diagnosis agent.** Produces a structured diagnosis with per-action confidence scores (0 to 1). Actions under 0.6 are flagged as hypotheses, not certainties. Multi-model runs include a cross-model note that names specific models and hypothesizes why they differ (training data, content gaps, category framing).
+    subgraph S2["Stage 2 — Probe Agent"]
+        E -->|gaps found| F[Writes 1–3 targeted follow-up queries\nin natural language]
+        E -->|no gaps| G[Skip]
+    end
 
-**Stage 4: GEO Playbook.** Translates the diagnosis into a ready-to-execute content plan: 2 to 4 content briefs with titles, target queries, outlines, word counts, and a prioritized timeline. Built for the team that actually has to fix the problem.
+    F --> H
+    G --> H
+
+    subgraph S3["Stage 3 — Diagnosis Agent"]
+        H[Structured JSON diagnosis] --> I[Per-action confidence scores 0–1\nActions under 0.6 flagged as hypotheses]
+        I --> J[Cross-model disagreement note\nwhen 2+ providers run]
+    end
+
+    J --> K
+
+    subgraph S4["Stage 4 — GEO Playbook"]
+        K[2–4 content briefs with titles,\ntarget queries, outlines, word counts] --> L[Quick wins + prioritized timeline]
+    end
+
+    L --> M([Audit complete — ready to act])
+
+    style S1 fill:#f0f9ff,stroke:#bae6fd
+    style S2 fill:#fefce8,stroke:#fde68a
+    style S3 fill:#f0fdf4,stroke:#bbf7d0
+    style S4 fill:#fdf4ff,stroke:#e9d5ff
+```
+
+**Stage 1: Standard audit.** Six fixed scenarios mapped to buyer-journey stages, regex mention detection, and a single batch LLM call for sentiment and claims across all results.
+
+**Stage 2: Probe agent.** An LLM orchestrator reviews the six results and decides whether to fire 1 to 3 follow-up queries. It reasons about what it found — invisible brand, negative framing, mixed signals — and writes queries in natural language. Not templated.
+
+**Stage 3: Diagnosis agent.** Produces a structured diagnosis with per-action confidence scores. Actions under 0.6 are flagged as hypotheses. Multi-model runs include a cross-model note naming specific models and hypothesizing why they differ.
+
+**Stage 4: GEO Playbook.** Translates the diagnosis into a ready-to-execute content plan: 2 to 4 briefs with titles, target queries, outlines, word counts, and a prioritized timeline. Built for the team that actually has to fix the problem.
 
 ---
 
