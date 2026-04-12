@@ -13,15 +13,14 @@ import time
 import streamlit as st
 
 from core.config import PROVIDERS, PRIMARY_PROVIDERS, OPTIONAL_PROVIDERS, SCENARIOS, PRESET_BRANDS
-from core.models import CompetitorSOV
 from llm.client import call_llm
-from agents.analyzer import detect_mention, enrich_with_claims, count_competitor_mentions
+from agents.analyzer import detect_mention, enrich_with_claims
 from agents.probe_agent import ProbeAgent
 from agents.diagnosis_agent import DiagnosisAgent
 from ui.styles import CSS
 from ui.components import (
     section_label, render_scenario_card, render_model_table,
-    render_metric_cards, render_probe_box, render_diagnosis, render_sov_table,
+    render_metric_cards, render_probe_box, render_diagnosis, render_competitor_score_table,
 )
 
 st.set_page_config(page_title="Brand LLM Visibility", page_icon="◉", layout="wide")
@@ -364,20 +363,29 @@ with tab_map["Diagnosis"]:
 if competitors_input and "Competitors" in tab_map:
     with tab_map["Competitors"]:
         st.markdown("<br>", unsafe_allow_html=True)
-        all_responses = []
-        for pk, results in results_by_provider.items():
-            all_responses.extend(r.get("response", "") for r in results)
-            probe_r, _ = probe_by_provider.get(pk, ([], ""))
-            all_responses.extend(r.get("response", "") for r in probe_r)
+        api_key_val, model_name = active_models[pk_primary]
+        competitor_rows = []
 
-        total_responses = len(all_responses)
-        brand_mentions = count_competitor_mentions(all_responses, brand)
-        competitor_sovs = []
-        for comp_name in competitors_input:
-            mentions = count_competitor_mentions(all_responses, comp_name)
-            competitor_sovs.append(CompetitorSOV(
-                name=comp_name,
-                mentions=mentions,
-                total_responses=total_responses,
-            ))
-        render_sov_table(brand, brand_mentions, competitor_sovs, total_responses)
+        with st.spinner(f"Auditing {len(competitors_input)} competitor{'s' if len(competitors_input) != 1 else ''} across {len(SCENARIOS)} scenarios..."):
+            for comp_name in competitors_input:
+                comp_mc = 0
+                comp_total = 0
+                for scenario in SCENARIOS:
+                    try:
+                        prompt = scenario["prompt"](comp_name, category)
+                        response_text = call_llm(pk_primary, model_name, api_key_val, prompt)
+                        if detect_mention(response_text, comp_name)["mentioned"]:
+                            comp_mc += 1
+                    except Exception:
+                        pass
+                    comp_total += 1
+                    time.sleep(0.15)
+                competitor_rows.append({
+                    "name": comp_name,
+                    "mention_count": comp_mc,
+                    "total": comp_total,
+                    "score": round((comp_mc / comp_total) * 100) if comp_total else 0,
+                })
+
+        section_label("Visibility comparison")
+        render_competitor_score_table(brand, score, mc, total, competitor_rows)

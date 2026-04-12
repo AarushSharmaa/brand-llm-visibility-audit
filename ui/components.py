@@ -241,6 +241,46 @@ def render_diagnosis(diagnosis: AuditDiagnosis, multi_model: bool = False):
         """, unsafe_allow_html=True)
 
 
+# ── Competitor score table ────────────────────────────────────────────────────
+
+def render_competitor_score_table(
+    brand: str, brand_score: int, brand_mc: int, brand_total: int,
+    competitor_rows: list[dict],
+):
+    """
+    Renders a ranked score table comparing the main brand against competitors.
+    competitor_rows: [{"name": str, "score": int, "mention_count": int, "total": int}]
+    """
+    all_rows = [{"name": brand, "score": brand_score, "mention_count": brand_mc, "total": brand_total, "is_brand": True}]
+    for r in competitor_rows:
+        all_rows.append({**r, "is_brand": False})
+    all_rows.sort(key=lambda x: x["score"], reverse=True)
+
+    rows_html = ""
+    for row in all_rows:
+        cls = score_class(row["score"])
+        you_badge = ' <span style="font-size:10px;color:#94a3b8;font-family:Inter,sans-serif;font-weight:400">you</span>' if row["is_brand"] else ""
+        name_style = "font-weight:600;color:#0f172a" if row["is_brand"] else "color:#475569"
+        rows_html += f"""
+        <tr>
+          <td style="{name_style};font-family:Inter,sans-serif">{row["name"]}{you_badge}</td>
+          <td class="{cls}" style="font-size:15px;font-weight:600;font-family:Inter,sans-serif">{row["score"]}%</td>
+          <td style="color:#64748b;font-family:Inter,sans-serif">{row["mention_count"]} / {row["total"]}</td>
+        </tr>"""
+
+    st.markdown(f"""
+    <div style="margin:0 0 24px 0;overflow-x:auto">
+      <table class="model-table">
+        <thead><tr>
+          <th>Brand</th><th>Score</th><th>Mentioned in</th>
+        </tr></thead>
+        <tbody>{rows_html}</tbody>
+      </table>
+    </div>
+    <p style="font-family:Inter,sans-serif;font-size:10px;color:#94a3b8;margin-top:-16px">Each competitor audited independently across the same 6 scenarios.</p>
+    """, unsafe_allow_html=True)
+
+
 # ── Competitor SOV ────────────────────────────────────────────────────────────
 
 def render_sov_table(brand: str, brand_mentions: int, competitors: list[CompetitorSOV], total_responses: int):
