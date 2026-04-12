@@ -1,11 +1,11 @@
 """
-Tests for ui/components.py — pure render-helper functions only.
-No Streamlit calls (those require a live session). Tests cover all
-functions that return strings or do pure computation.
+Tests for ui/components.py — pure render-helper functions and HTML-generating
+render functions (st.markdown mocked so no Streamlit session required).
 """
 
 import pytest
-from ui.components import score_color, score_class, sentiment_html, claims_html
+from unittest.mock import patch, call
+from ui.components import score_color, score_class, sentiment_html, claims_html, render_competitor_score_table
 
 
 # ── score_color ───────────────────────────────────────────────────────────────
@@ -115,3 +115,81 @@ def test_claims_html_special_characters():
     html = claims_html(["best-in-class", "50M+ users"])
     assert "best-in-class" in html
     assert "50M+ users" in html
+
+
+# ── render_competitor_score_table ─────────────────────────────────────────────
+
+def _captured_html(brand, brand_score, brand_mc, brand_total, competitor_rows):
+    """Run render_competitor_score_table with st.markdown mocked, return HTML string."""
+    with patch("ui.components.st") as mock_st:
+        render_competitor_score_table(brand, brand_score, brand_mc, brand_total, competitor_rows)
+        assert mock_st.markdown.called
+        return mock_st.markdown.call_args[0][0]
+
+
+def test_competitor_table_contains_brand():
+    html = _captured_html("Notion", 67, 4, 6, [{"name": "Obsidian", "score": 50, "mention_count": 3, "total": 6}])
+    assert "Notion" in html
+
+
+def test_competitor_table_contains_competitors():
+    html = _captured_html("Notion", 67, 4, 6, [{"name": "Obsidian", "score": 50, "mention_count": 3, "total": 6}])
+    assert "Obsidian" in html
+
+
+def test_competitor_table_shows_you_badge_on_brand():
+    html = _captured_html("Notion", 67, 4, 6, [])
+    assert "you" in html
+
+
+def test_competitor_table_shows_scores():
+    html = _captured_html("Notion", 67, 4, 6, [{"name": "Obsidian", "score": 83, "mention_count": 5, "total": 6}])
+    assert "67%" in html
+    assert "83%" in html
+
+
+def test_competitor_table_shows_mention_counts():
+    html = _captured_html("Notion", 67, 4, 6, [{"name": "Obsidian", "score": 83, "mention_count": 5, "total": 6}])
+    assert "4 / 6" in html
+    assert "5 / 6" in html
+
+
+def test_competitor_table_sorted_by_score_descending():
+    # Competitor has higher score — should appear before brand in the table
+    html = _captured_html(
+        "Notion", 33, 2, 6,
+        [{"name": "Obsidian", "score": 83, "mention_count": 5, "total": 6}],
+    )
+    obsidian_pos = html.index("Obsidian")
+    notion_pos = html.index("Notion")
+    assert obsidian_pos < notion_pos
+
+
+def test_competitor_table_no_competitors():
+    # Just the brand, no competitors — should not crash
+    html = _captured_html("Notion", 67, 4, 6, [])
+    assert "Notion" in html
+    assert "you" in html
+
+
+def test_competitor_table_multiple_competitors():
+    rows = [
+        {"name": "Obsidian", "score": 83, "mention_count": 5, "total": 6},
+        {"name": "Roam", "score": 17, "mention_count": 1, "total": 6},
+    ]
+    html = _captured_html("Notion", 50, 3, 6, rows)
+    assert "Obsidian" in html
+    assert "Roam" in html
+
+
+def test_competitor_table_score_class_applied():
+    # High score should get score-high class
+    html = _captured_html("Notion", 100, 6, 6, [])
+    assert "score-high" in html
+
+
+def test_competitor_table_zero_score():
+    rows = [{"name": "Ghost", "score": 0, "mention_count": 0, "total": 6}]
+    html = _captured_html("Notion", 67, 4, 6, rows)
+    assert "0%" in html
+    assert "score-low" in html

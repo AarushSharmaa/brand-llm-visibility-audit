@@ -105,6 +105,13 @@ with st.sidebar:
         c = st.text_input(f"Competitor {i+1}", placeholder="e.g. Notion", key=f"comp_{i}", label_visibility="collapsed")
         if c.strip():
             competitors_input.append(c.strip())
+    if competitors_input:
+        n = len(competitors_input) * len(SCENARIOS)
+        st.markdown(
+            f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#cbd5e1;margin:4px 0 0 0">'
+            f'{n} extra API calls — {len(competitors_input)} competitor{"s" if len(competitors_input) != 1 else ""} × {len(SCENARIOS)} scenarios</p>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown("<br>", unsafe_allow_html=True)
     run = st.button("Run audit", use_container_width=True)
