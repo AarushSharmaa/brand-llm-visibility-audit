@@ -17,10 +17,12 @@ from llm.client import call_llm
 from agents.analyzer import detect_mention, enrich_with_claims
 from agents.probe_agent import ProbeAgent
 from agents.diagnosis_agent import DiagnosisAgent
+from agents.playbook_agent import PlaybookAgent
 from ui.styles import CSS
 from ui.components import (
     section_label, render_scenario_card, render_model_table,
     render_metric_cards, render_probe_box, render_diagnosis, render_competitor_score_table,
+    render_playbook,
 )
 
 st.set_page_config(page_title="Brand LLM Visibility", page_icon="◉", layout="wide")
@@ -275,7 +277,7 @@ dominant_sentiment = "positive" if pos_count > neg_count else ("negative" if neg
 
 # ── Tabs — Peec AI section structure ─────────────────────────────────────────
 
-tab_labels = ["Overview", "Scenarios", "Diagnosis"]
+tab_labels = ["Overview", "Scenarios", "Diagnosis", "GEO Playbook"]
 if competitors_input:
     tab_labels.append("Competitors")
 if multi:
@@ -353,6 +355,7 @@ with tab_map["Scenarios"]:
 
 # ── Tab: Diagnosis ────────────────────────────────────────────────────────────
 
+diagnosis = None
 with tab_map["Diagnosis"]:
     st.markdown("<br>", unsafe_allow_html=True)
     with st.spinner("Generating diagnosis..."):
@@ -363,6 +366,25 @@ with tab_map["Diagnosis"]:
             render_diagnosis(diagnosis, multi_model=multi)
         except Exception as e:
             st.error(f"Could not generate diagnosis: {e}")
+
+
+# ── Tab: GEO Playbook ────────────────────────────────────────────────────────
+
+with tab_map["GEO Playbook"]:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if diagnosis is None:
+        st.info("Run the Diagnosis tab first — the playbook is generated from your diagnosis.")
+    else:
+        with st.spinner("Generating content playbook..."):
+            try:
+                api_key_val, model_name = active_models[pk_primary]
+                playbook_agent = PlaybookAgent(pk_primary, model_name, api_key_val)
+                playbook = playbook_agent.run(
+                    brand, category, diagnosis, results_by_provider, competitors_input
+                )
+                render_playbook(playbook)
+            except Exception as e:
+                st.error(f"Could not generate playbook: {e}")
 
 
 # ── Tab: Competitors ──────────────────────────────────────────────────────────

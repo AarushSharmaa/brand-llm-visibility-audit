@@ -400,5 +400,34 @@ div[data-testid="stStatusWidget"] { display: none; }
 #MainMenu { visibility: hidden; }
 footer    { visibility: hidden; }
 header    { visibility: hidden; }
+
+/* ── PLAYBOOK ── */
+.playbook-summary {
+    background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+    padding: 18px 20px; font-size: 14px; line-height: 1.8; color: #166534;
+    margin-bottom: 16px;
+}
+.playbook-quick-wins {
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+    padding: 14px 20px; margin-bottom: 20px;
+}
+.brief-card {
+    background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;
+    padding: 18px 20px; margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.brief-card:hover { border-color: #cbd5e1; box-shadow: 0 3px 8px rgba(15,23,42,0.07); }
+.brief-title { font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 10px 0; line-height: 1.4; }
+.brief-badge {
+    display: inline-block; font-size: 10px; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.06em; border-radius: 4px; padding: 2px 8px; margin-right: 6px;
+    font-family: 'Inter', sans-serif;
+}
+.badge-type { background: #f1f5f9; color: #64748b; }
+.badge-week { background: #dcfce7; color: #166534; }
+.badge-month { background: #fef9c3; color: #854d0e; }
+.badge-quarter { background: #f1f5f9; color: #64748b; }
+.brief-outline li { font-size: 12px; color: #475569; margin-bottom: 3px; line-height: 1.5; }
 </style>
 """

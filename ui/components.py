@@ -4,7 +4,7 @@ Each function takes data + calls st.markdown() — no business logic here.
 """
 
 import streamlit as st
-from core.models import ActionItem, AuditDiagnosis, CompetitorSOV
+from core.models import ActionItem, AuditDiagnosis, CompetitorSOV, GEOPlaybook
 from core.config import PROVIDERS
 
 
@@ -279,6 +279,83 @@ def render_competitor_score_table(
     </div>
     <p style="font-family:Inter,sans-serif;font-size:10px;color:#94a3b8;margin-top:-16px">Each competitor audited independently across the same 6 scenarios.</p>
     """, unsafe_allow_html=True)
+
+
+# ── GEO Playbook ─────────────────────────────────────────────────────────────
+
+def render_playbook(playbook: GEOPlaybook):
+    if not playbook.executive_summary:
+        return
+
+    # Executive summary
+    st.markdown(
+        f'<div class="playbook-summary">{playbook.executive_summary}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Quick wins
+    if playbook.quick_wins:
+        items = "".join(
+            f'<li style="font-family:Inter,sans-serif;font-size:13px;color:#92400e;margin-bottom:4px;line-height:1.5">{w}</li>'
+            for w in playbook.quick_wins
+        )
+        st.markdown(
+            f'<div class="playbook-quick-wins">'
+            f'<p style="font-family:Inter,sans-serif;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#b45309;margin:0 0 8px 0">Quick wins — do these today</p>'
+            f'<ol style="margin:0;padding-left:18px">{items}</ol>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # Content briefs
+    if playbook.briefs:
+        st.markdown(
+            '<p style="font-family:Inter,sans-serif;font-size:10px;text-transform:uppercase;'
+            'letter-spacing:0.1em;color:#94a3b8;margin:4px 0 12px 0">Content briefs</p>',
+            unsafe_allow_html=True,
+        )
+
+    priority_badge_class = {"this week": "badge-week", "this month": "badge-month", "next quarter": "badge-quarter"}
+
+    for brief in playbook.briefs:
+        badge_cls = priority_badge_class.get(brief.priority, "badge-quarter")
+        outline_items = "".join(f"<li>{h}</li>" for h in brief.outline)
+        queries = "".join(
+            f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#64748b;'
+            f'background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:2px 8px;'
+            f'margin-right:6px;margin-bottom:4px;display:inline-block">{q}</span>'
+            for q in brief.target_queries
+        )
+        comp_text = (
+            f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#94a3b8">'
+            f'Mention: {", ".join(brief.competitors_to_reference)}</span>'
+            if brief.competitors_to_reference else ""
+        )
+
+        st.markdown(f"""
+        <div class="brief-card">
+          <p class="brief-title">{brief.title}</p>
+          <div style="margin-bottom:10px">
+            <span class="brief-badge badge-type">{brief.content_type}</span>
+            <span class="brief-badge {badge_cls}">{brief.priority}</span>
+            <span style="font-family:Inter,sans-serif;font-size:11px;color:#94a3b8">{brief.word_count:,} words</span>
+          </div>
+          <div style="margin-bottom:10px">{queries}</div>
+          <ul class="brief-outline" style="margin:0 0 10px 0;padding-left:18px">{outline_items}</ul>
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+            {comp_text}
+          </div>
+          {f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#64748b;font-style:italic;margin:10px 0 0 0">{brief.why_this_matters}</p>' if brief.why_this_matters else ""}
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Timeline
+    if playbook.estimated_timeline:
+        st.markdown(
+            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#94a3b8;margin-top:4px">'
+            f'Timeline: {playbook.estimated_timeline}</p>',
+            unsafe_allow_html=True,
+        )
 
 
 # ── Competitor SOV ────────────────────────────────────────────────────────────

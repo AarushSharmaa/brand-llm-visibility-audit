@@ -68,6 +68,31 @@ class AuditDiagnosis(BaseModel):
     cross_model_note: Optional[str] = None
 
 
+class ContentBrief(BaseModel):
+    """A single writer-ready content brief derived from a GEO diagnosis action."""
+    title: str
+    content_type: Literal[
+        "comparison page", "how-to guide", "listicle",
+        "case study", "community post", "llms.txt update", "product page update"
+    ] = "how-to guide"
+    target_queries: list[str] = Field(default_factory=list)
+    word_count: int = 800
+    outline: list[str] = Field(default_factory=list)
+    competitors_to_reference: list[str] = Field(default_factory=list)
+    priority: Literal["this week", "this month", "next quarter"] = "this month"
+    why_this_matters: str = ""
+
+
+class GEOPlaybook(BaseModel):
+    """Full content playbook generated from audit diagnosis."""
+    brand: str
+    category: str
+    executive_summary: str
+    briefs: list[ContentBrief] = Field(default_factory=list)
+    quick_wins: list[str] = Field(default_factory=list)
+    estimated_timeline: str = ""
+
+
 class CompetitorSOV(BaseModel):
     """Share-of-voice computed from existing response text — no extra API calls."""
     name: str

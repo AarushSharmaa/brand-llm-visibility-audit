@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brand LLM Visibility Audit — Preview</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Lora:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0f0f0f;
+    color: #e8e8e8;
+    font-family: 'Lora', Georgia, serif;
+    min-height: 100vh;
+    padding: 40px 16px 80px;
+  }
+
+  .page { max-width: 720px; margin: 0 auto; }
+
+  /* ── Typography ── */
+  h2 { font-family: 'Lora', serif; font-weight: 400; font-size: 22px; color: #e8e8e8; margin-bottom: 6px; }
+  .subtitle { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #666; margin-bottom: 28px; }
+
+  /* ── Form elements ── */
+  .field-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #888;
+    display: block;
+    margin-bottom: 6px;
+  }
+  input[type="password"], input[type="text"], select {
+    width: 100%;
+    background: #1a1a1a;
+    border: 1px solid #2e2e2e;
+    border-radius: 6px;
+    color: #e8e8e8;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 9px 12px;
+    outline: none;
+    margin-bottom: 16px;
+  }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .btn {
+    background: #a3e635;
+    color: #0f0f0f;
+    border: none;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 10px 28px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+
+  hr { border: none; border-top: 0.5px solid #2e2e2e; margin: 24px 0; }
+
+  /* ── Expander ── */
+  .expander {
+    border: 0.5px solid #2e2e2e;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .expander-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 14px;
+    cursor: pointer;
+    user-select: none;
+    background: #141414;
+  }
+  .expander-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #888;
+  }
+  .expander-title .opt-badge {
+    font-size: 10px;
+    color: #555;
+    margin-left: 6px;
+  }
+  .expander-arrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #555;
+  }
+  .expander-body {
+    padding: 16px 14px 4px;
+    background: #111;
+    border-top: 0.5px solid #1e1e1e;
+  }
+  .expander-body .helper {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #444;
+    margin-bottom: 14px;
+    line-height: 1.6;
+  }
+  .model-key-row {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .model-key-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #666;
+    text-align: right;
+  }
+  .model-key-row input {
+    margin-bottom: 0;
+  }
+
+  /* ── Section label ── */
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #666;
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 0.5px solid #2e2e2e;
+  }
+
+  /* ── Progress list ── */
+  .progress-list { margin-bottom: 8px; }
+  .prog-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot-done  { background: #a3e635; }
+  .dot-run   { background: #fbbf24; }
+  .dot-wait  { background: #2e2e2e; }
+  .prog-label { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .prog-done  { color: #a3e635; }
+  .prog-run   { color: #fbbf24; }
+  .prog-wait  { color: #555; }
+
+  /* ── Model comparison table ── */
+  .model-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    margin-bottom: 0;
+  }
+  .model-table th {
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #555;
+    padding: 8px 12px;
+    border-bottom: 0.5px solid #2e2e2e;
+  }
+  .model-table td {
+    padding: 11px 12px;
+    border-bottom: 0.5px solid #1a1a1a;
+    color: #ccc;
+    vertical-align: middle;
+  }
+  .model-table tr:last-child td { border-bottom: none; }
+  .model-name-cell { font-weight: 500; color: #e8e8e8; display: flex; align-items: center; gap: 8px; }
+  .model-icon {
+    width: 18px; height: 18px; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-family: 'JetBrains Mono', monospace;
+    flex-shrink: 0;
+  }
+  .model-icon-g { background: rgba(66,133,244,0.15); color: #4285f4; }
+  .model-icon-o { background: rgba(16,185,129,0.12); color: #10b981; }
+  .model-icon-p { background: rgba(251,191,36,0.1); color: #fbbf24; }
+  .model-icon-c { background: rgba(129,140,248,0.12); color: #818cf8; }
+  .score-high { color: #a3e635; font-weight: 500; }
+  .score-mid  { color: #fbbf24; font-weight: 500; }
+  .score-low  { color: #f87171; font-weight: 500; }
+  .combined-row { background: #141414; }
+  .combined-row td { border-top: 0.5px solid #2e2e2e; padding-top: 12px; padding-bottom: 12px; }
+
+  .model-table-wrap {
+    background: #1a1a1a;
+    border: 1px solid #2e2e2e;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  /* ── Result cards ── */
+  .result-card {
+    border: 0.5px solid #2e2e2e;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    background: #1a1a1a;
+  }
+  .result-card-hit { border-left: 3px solid #a3e635; }
+  .result-card-miss { border-left: 3px solid #2e2e2e; opacity: 0.65; }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .card-title { font-size: 13px; font-weight: 500; color: #e8e8e8; }
+
+  /* ── Per-model dots on scenario cards ── */
+  .model-dots {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .model-dot-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+  }
+  .model-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .model-dot-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: #444;
+    text-transform: uppercase;
+  }
+  .mdot-hit  { background: #a3e635; }
+  .mdot-miss { background: #2e2e2e; }
+
+  .tag { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 3px 8px; border-radius: 4px; white-space: nowrap; }
+  .tag-yes  { background: rgba(163,230,53,0.15); color: #a3e635; }
+  .tag-pos  { background: rgba(251,191,36,0.10); color: #fbbf24; }
+  .tag-no   { background: #1e1e1e; color: #555; }
+  .tag-think { background: rgba(129,140,248,0.12); color: #818cf8; }
+
+  .snippet {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #888;
+    line-height: 1.7;
+    border-left: 2px solid #2e2e2e;
+    padding-left: 10px;
+    margin-top: 4px;
+  }
+  .no-mention { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #444; font-style: italic; margin-top: 4px; }
+
+  /* ── GEO / cross-model diagnosis box ── */
+  .geo-box {
+    background: #1a1a1a;
+    border: 1px solid #2e2e2e;
+    border-radius: 8px;
+    padding: 20px;
+    font-size: 14px;
+    line-height: 1.85;
+    color: #ccc;
+    margin-bottom: 10px;
+  }
+  .geo-box p { margin-bottom: 14px; }
+  .geo-box p:last-child { margin-bottom: 0; }
+  .geo-box strong { color: #e8e8e8; }
+
+  /* ── Footer ── */
+  .footer-note {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: #444; text-align: center; margin-top: 40px;
+  }
+
+  /* ── Annotation ribbon (preview only) ── */
+  .new-badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em;
+    background: rgba(129,140,248,0.15); color: #818cf8;
+    padding: 2px 6px; border-radius: 3px;
+    margin-left: 8px; vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── HEADER ── -->
+  <h2>Brand LLM visibility audit</h2>
+  <p class="subtitle">6 discovery scenarios across leading AI models. See where your brand stands.</p>
+
+  <!-- ── GEMINI KEY (primary, required) ── -->
+  <label class="field-label">Gemini API key</label>
+  <input type="password" placeholder="AIza... (free at aistudio.google.com — no credit card)" value="AIzaSy••••••••••••••">
+
+  <!-- ── OPTIONAL MULTI-MODEL EXPANDER ── -->
+  <div class="expander">
+    <div class="expander-header" onclick="this.parentElement.querySelector('.expander-body').style.display = this.parentElement.querySelector('.expander-body').style.display === 'none' ? 'block' : 'none'">
+      <span class="expander-title">Compare across more models <span class="opt-badge">— optional</span></span>
+      <span class="expander-arrow">▾</span>
+    </div>
+    <div class="expander-body">
+      <p class="helper">Add keys for any models you want to include. Each model runs the same 6 scenarios — you see where your brand wins, loses, or varies across AI systems. Results appear as a side-by-side table.</p>
+      <div class="model-key-row">
+        <span class="model-key-name">ChatGPT</span>
+        <input type="password" placeholder="sk-... (OpenAI API key)" value="sk-proj-••••••••••••••">
+      </div>
+      <div class="model-key-row">
+        <span class="model-key-name">Perplexity</span>
+        <input type="password" placeholder="pplx-... (Perplexity API key)">
+      </div>
+      <div class="model-key-row">
+        <span class="model-key-name">Claude</span>
+        <input type="password" placeholder="sk-ant-... (Anthropic API key)">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── BRAND PICKER ── -->
+  <label class="field-label">Quick-pick a brand</label>
+  <select>
+    <option>Notion</option>
+    <option>HubSpot</option>
+    <option>Peec AI</option>
+    <option>Custom (type below)</option>
+  </select>
+
+  <div class="two-col">
+    <div>
+      <label class="field-label">Brand name</label>
+      <input type="text" value="Notion">
+    </div>
+    <div>
+      <label class="field-label">Category</label>
+      <input type="text" value="productivity and note-taking software">
+    </div>
+  </div>
+
+  <button class="btn">Run audit</button>
+
+  <hr>
+
+  <!-- ── PROGRESS (multi-model) ── -->
+  <p class="section-label">Running scenarios</p>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+    <div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px">Gemini</div>
+      <div class="progress-list">
+        <div class="prog-row"><div class="dot dot-done"></div><span class="prog-label prog-done">Market discovery</span></div>
+        <div class="prog-row"><div class="dot dot-done"></div><span class="prog-label prog-done">Tool recommendation</span></div>
+        <div class="prog-row"><div class="dot dot-done"></div><span class="prog-label prog-done">Brand knowledge</span></div>
+        <div class="prog-row"><div class="dot dot-done"></div><span class="prog-label prog-done">Competitive landscape</span></div>
+        <div class="prog-row"><div class="dot dot-done"></div><span class="prog-label prog-done">Best-in-class search</span></div>
+        <div class="prog-row"><div class="dot dot-done"></div><span class="prog-label prog-done">Vendor comparison</span></div>
+      </div>
+    </div>
+    <div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px">ChatGPT</div>
+      <div class="progress-list">
+        <div class="prog-row"><div class="dot dot-done"></div><span class="prog-label prog-done">Market discovery</span></div>
+        <div class="prog-row"><div class="dot dot-done"></div><span class="prog-label prog-done">Tool recommendation</span></div>
+        <div class="prog-row"><div class="dot dot-done"></div><span class="prog-label prog-done">Brand knowledge</span></div>
+        <div class="prog-row"><div class="dot dot-run"></div><span class="prog-label prog-run">Competitive landscape &mdash; running...</span></div>
+        <div class="prog-row"><div class="dot dot-wait"></div><span class="prog-label prog-wait">Best-in-class search</span></div>
+        <div class="prog-row"><div class="dot dot-wait"></div><span class="prog-label prog-wait">Vendor comparison</span></div>
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- ── MODEL COMPARISON TABLE ── -->
+  <p class="section-label">Model comparison <span class="new-badge">multi-model</span></p>
+
+  <div class="model-table-wrap">
+    <table class="model-table">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Visibility score</th>
+          <th>Mentioned</th>
+          <th>Avg position</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <div class="model-name-cell">
+              <div class="model-icon model-icon-g">G</div>
+              Gemini
+            </div>
+          </td>
+          <td class="score-high">83%</td>
+          <td>5 / 6</td>
+          <td>#2.4</td>
+        </tr>
+        <tr>
+          <td>
+            <div class="model-name-cell">
+              <div class="model-icon model-icon-o">O</div>
+              ChatGPT
+            </div>
+          </td>
+          <td class="score-mid">50%</td>
+          <td>3 / 6</td>
+          <td>#3.0</td>
+        </tr>
+        <tr class="combined-row">
+          <td>
+            <div class="model-name-cell" style="color:#888">
+              Combined
+            </div>
+          </td>
+          <td style="color:#e8e8e8;font-weight:500">67%</td>
+          <td style="color:#888">8 / 12</td>
+          <td style="color:#888">#2.7</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <hr>
+
+  <!-- ── SCENARIO BREAKDOWN (multi-model dots) ── -->
+  <p class="section-label">Scenario breakdown</p>
+
+  <div class="result-card result-card-hit">
+    <div class="card-header">
+      <span class="card-title">Market discovery</span>
+      <div class="model-dots">
+        <div class="model-dot-group">
+          <div class="model-dot mdot-hit"></div>
+          <span class="model-dot-label">G</span>
+        </div>
+        <div class="model-dot-group">
+          <div class="model-dot mdot-hit"></div>
+          <span class="model-dot-label">O</span>
+        </div>
+      </div>
+    </div>
+    <div class="snippet">"...1. Obsidian — local-first knowledge base. 2. <strong>Notion</strong> — all-in-one workspace for notes, docs, and databases, used by teams and individuals alike..." <span style="color:#555;font-size:11px">— Gemini</span></div>
+    <div class="snippet" style="margin-top:6px">"...<strong>Notion</strong> is one of the most widely used productivity platforms for teams looking to replace scattered tools..." <span style="color:#555;font-size:11px">— ChatGPT</span></div>
+  </div>
+
+  <div class="result-card result-card-hit">
+    <div class="card-header">
+      <span class="card-title">Tool recommendation</span>
+      <div class="model-dots">
+        <div class="model-dot-group">
+          <div class="model-dot mdot-hit"></div>
+          <span class="model-dot-label">G</span>
+        </div>
+        <div class="model-dot-group">
+          <div class="model-dot mdot-hit"></div>
+          <span class="model-dot-label">O</span>
+        </div>
+      </div>
+    </div>
+    <div class="snippet">"...<strong>Notion</strong> is the most versatile option right now. It handles notes, wikis, project management, and databases in a single interface..." <span style="color:#555;font-size:11px">— Gemini</span></div>
+  </div>
+
+  <div class="result-card result-card-hit">
+    <div class="card-header">
+      <span class="card-title">Brand knowledge</span>
+      <div class="model-dots">
+        <div class="model-dot-group">
+          <div class="model-dot mdot-hit"></div>
+          <span class="model-dot-label">G</span>
+        </div>
+        <div class="model-dot-group">
+          <div class="model-dot mdot-hit"></div>
+          <span class="model-dot-label">O</span>
+        </div>
+      </div>
+    </div>
+    <div class="snippet">"...<strong>Notion</strong> is an all-in-one workspace that blends notes, documents, wikis, and lightweight project management..." <span style="color:#555;font-size:11px">— Gemini</span></div>
+  </div>
+
+  <div class="result-card result-card-hit">
+    <div class="card-header">
+      <span class="card-title">Competitive landscape</span>
+      <div class="model-dots">
+        <div class="model-dot-group">
+          <div class="model-dot mdot-hit"></div>
+          <span class="model-dot-label">G</span>
+        </div>
+        <div class="model-dot-group">
+          <div class="model-dot mdot-miss"></div>
+          <span class="model-dot-label">O</span>
+        </div>
+      </div>
+    </div>
+    <div class="snippet">"...Confluence dominates enterprise, Coda is strong for app-like docs, and <strong>Notion</strong> sits in the middle..." <span style="color:#555;font-size:11px">— Gemini</span></div>
+    <p class="no-mention" style="margin-top:6px">Not mentioned by ChatGPT — Confluence, Asana, and Linear cited instead.</p>
+  </div>
+
+  <div class="result-card result-card-miss">
+    <div class="card-header">
+      <span class="card-title">Best-in-class search</span>
+      <div class="model-dots">
+        <div class="model-dot-group">
+          <div class="model-dot mdot-miss"></div>
+          <span class="model-dot-label">G</span>
+        </div>
+        <div class="model-dot-group">
+          <div class="model-dot mdot-miss"></div>
+          <span class="model-dot-label">O</span>
+        </div>
+      </div>
+    </div>
+    <p class="no-mention">Not mentioned by either model. Obsidian leads on Gemini; Obsidian + Roam on ChatGPT.</p>
+  </div>
+
+  <div class="result-card result-card-hit">
+    <div class="card-header">
+      <span class="card-title">Vendor comparison</span>
+      <div class="model-dots">
+        <div class="model-dot-group">
+          <div class="model-dot mdot-hit"></div>
+          <span class="model-dot-label">G</span>
+        </div>
+        <div class="model-dot-group">
+          <div class="model-dot mdot-miss"></div>
+          <span class="model-dot-label">O</span>
+        </div>
+      </div>
+    </div>
+    <div class="snippet">"...<strong>Notion</strong> wins on flexibility and price but loses to Confluence on enterprise security controls..." <span style="color:#555;font-size:11px">— Gemini</span></div>
+    <p class="no-mention" style="margin-top:6px">Not mentioned by ChatGPT — comparison focused on Confluence vs. Asana.</p>
+  </div>
+
+  <hr>
+
+  <!-- ── CROSS-MODEL DIAGNOSIS ── -->
+  <p class="section-label">GEO diagnosis <span class="new-badge">cross-model</span></p>
+
+  <div class="geo-box">
+    <p>Notion's visibility is <strong>model-dependent</strong> — strong on Gemini (83%) but only average on ChatGPT (50%). That gap is the real signal. Both models agree on one thing: Notion doesn't surface for "best-in-class" queries, where Obsidian consistently wins the top slot on both platforms.</p>
+    <p>The pattern across models points to a positioning problem, not a content volume problem. Gemini surfaces Notion in competitive and comparison contexts; ChatGPT skips it there and reaches for Confluence instead. This suggests ChatGPT's training data skews Notion toward personal use while framing enterprise productivity around Microsoft/Atlassian tools.</p>
+    <p>The one action that closes both gaps: publish a dedicated "Notion for teams vs. Confluence" comparison page, and a separate "Notion vs. Obsidian for personal knowledge management" piece. These two pages directly target the query types where both models currently fail to surface Notion — and head-to-head content is among the highest-weighted content types in LLM training corpora.</p>
+  </div>
+
+  <hr>
+
+  <!-- ── COMPETITOR SOV ── -->
+  <p class="section-label">Competitor share of voice</p>
+  <div class="model-table-wrap">
+    <table class="model-table">
+      <thead>
+        <tr>
+          <th>Brand</th>
+          <th>Score</th>
+          <th>Mentions</th>
+          <th>Share of voice</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><div class="model-name-cell"><strong>Notion</strong></div></td>
+          <td class="score-high">83%</td>
+          <td>5 / 6</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="background:#1e1e1e;border-radius:3px;height:5px;width:120px"><div style="background:#a3e635;border-radius:3px;height:5px;width:41%"></div></div>
+              <span>41%</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td><div class="model-name-cell" style="color:#ccc">Obsidian</div></td>
+          <td class="score-mid">67%</td>
+          <td>4 / 6</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="background:#1e1e1e;border-radius:3px;height:5px;width:120px"><div style="background:#555;border-radius:3px;height:5px;width:33%"></div></div>
+              <span style="color:#888">33%</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td><div class="model-name-cell" style="color:#ccc">Confluence</div></td>
+          <td class="score-low">33%</td>
+          <td>2 / 6</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="background:#1e1e1e;border-radius:3px;height:5px;width:120px"><div style="background:#555;border-radius:3px;height:5px;width:16%"></div></div>
+              <span style="color:#888">16%</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td><div class="model-name-cell" style="color:#ccc">Coda</div></td>
+          <td class="score-low">17%</td>
+          <td>1 / 6</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="background:#1e1e1e;border-radius:3px;height:5px;width:120px"><div style="background:#555;border-radius:3px;height:5px;width:10%"></div></div>
+              <span style="color:#888">10%</span>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="footer-note">Prototype by Aarush Sharma &mdash; demonstrating GEO audit thinking</p>
+</div>
+</body>
+</html>
