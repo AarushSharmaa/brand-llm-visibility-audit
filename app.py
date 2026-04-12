@@ -1,446 +1,383 @@
-import streamlit as st
-from google import genai
-from google.genai import types
-import re
-import time
+"""
+Brand LLM Visibility Audit — main entry point.
 
-st.set_page_config(
-    page_title="Brand LLM Visibility Audit",
-    page_icon="◉",
-    layout="centered"
+Architecture:
+  core/       — config, Pydantic data models
+  llm/        — unified LLM client (Gemini, Groq, OpenAI, Perplexity, Claude)
+  agents/     — analyzer, probe agent (agentic loop), diagnosis agent
+  ui/         — CSS + reusable render components
+  app.py      — thin Streamlit orchestrator (UI state + agent calls only)
+"""
+
+import time
+import streamlit as st
+
+from core.config import PROVIDERS, PRIMARY_PROVIDERS, OPTIONAL_PROVIDERS, SCENARIOS, PRESET_BRANDS
+from core.models import CompetitorSOV
+from llm.client import call_llm
+from agents.analyzer import detect_mention, enrich_with_claims, count_competitor_mentions
+from agents.probe_agent import ProbeAgent
+from agents.diagnosis_agent import DiagnosisAgent
+from ui.styles import CSS
+from ui.components import (
+    section_label, render_scenario_card, render_model_table,
+    render_metric_cards, render_probe_box, render_diagnosis, render_sov_table,
 )
 
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Lora:wght@400;500&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'Lora', Georgia, serif;
-}
-
-.stApp {
-    background-color: #0f0f0f;
-    color: #e8e8e8;
-}
-
-h1, h2, h3 {
-    font-family: 'Lora', Georgia, serif !important;
-    font-weight: 400 !important;
-    color: #e8e8e8 !important;
-}
-
-.stTextInput > div > div > input,
-.stSelectbox > div > div > div,
-.stTextArea > div > div > textarea {
-    background-color: #1a1a1a !important;
-    border: 1px solid #2e2e2e !important;
-    border-radius: 6px !important;
-    color: #e8e8e8 !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 13px !important;
-}
-
-.stSelectbox > div > div > div {
-    color: #e8e8e8 !important;
-}
-
-.stButton > button {
-    background-color: #a3e635 !important;
-    color: #0f0f0f !important;
-    border: none !important;
-    border-radius: 6px !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 13px !important;
-    font-weight: 500 !important;
-    padding: 10px 28px !important;
-    letter-spacing: 0.04em !important;
-}
-
-.stButton > button:hover {
-    background-color: #bef264 !important;
-    color: #0f0f0f !important;
-}
-
-label, .stSelectbox label, .stTextInput label {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 11px !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.08em !important;
-    color: #888 !important;
-}
-
-hr {
-    border-color: #2e2e2e !important;
-    margin: 24px 0 !important;
-}
-
-.metric-card {
-    background: #1a1a1a;
-    border: 1px solid #2e2e2e;
-    border-radius: 8px;
-    padding: 16px;
-    text-align: left;
-}
-
-.metric-val {
-    font-size: 26px;
-    font-weight: 500;
-    font-family: 'JetBrains Mono', monospace;
-    margin-bottom: 4px;
-}
-
-.metric-lbl {
-    font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #666;
-}
-
-.result-card {
-    border: 0.5px solid #2e2e2e;
-    border-radius: 8px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
-    background: #1a1a1a;
-}
-
-.result-card-hit {
-    border-left: 3px solid #a3e635;
-}
-
-.result-card-miss {
-    border-left: 3px solid #2e2e2e;
-    opacity: 0.7;
-}
-
-.section-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #666;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 0.5px solid #2e2e2e;
-}
-
-.tag-yes {
-    background: rgba(163,230,53,0.15);
-    color: #a3e635;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    padding: 3px 8px;
-    border-radius: 4px;
-}
-
-.tag-pos {
-    background: rgba(251,191,36,0.1);
-    color: #fbbf24;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    padding: 3px 8px;
-    border-radius: 4px;
-}
-
-.tag-no {
-    background: #1e1e1e;
-    color: #555;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    padding: 3px 8px;
-    border-radius: 4px;
-}
-
-.snippet {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: #888;
-    line-height: 1.7;
-    border-left: 2px solid #2e2e2e;
-    padding-left: 10px;
-    margin-top: 8px;
-}
-
-.geo-box {
-    background: #1a1a1a;
-    border: 1px solid #2e2e2e;
-    border-radius: 8px;
-    padding: 20px;
-    font-size: 14px;
-    line-height: 1.85;
-    color: #ccc;
-}
-
-.footer-note {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: #444;
-    text-align: center;
-    margin-top: 40px;
-}
-
-div[data-testid="stStatusWidget"] { display: none; }
-#MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
-header { visibility: hidden; }
-</style>
-""", unsafe_allow_html=True)
-
-PRESET_BRANDS = {
-    "Custom (type below)": {"brand": "", "category": ""},
-    "Peec AI": {"brand": "Peec AI", "category": "generative engine optimization"},
-    "Notion": {"brand": "Notion", "category": "productivity and note-taking software"},
-    "Perplexity": {"brand": "Perplexity", "category": "AI-powered search"},
-    "HubSpot": {"brand": "HubSpot", "category": "CRM and marketing automation"},
-    "Salesforce": {"brand": "Salesforce", "category": "enterprise CRM"},
-    "Intercom": {"brand": "Intercom", "category": "customer support and messaging"},
-    "Linear": {"brand": "Linear", "category": "software project management"},
-}
-
-SCENARIOS = [
-    {
-        "id": 1,
-        "label": "Market discovery",
-        "prompt": lambda b, c: f"List the top 5 companies in the {c} space. Rank them with a one-line description each."
-    },
-    {
-        "id": 2,
-        "label": "Tool recommendation",
-        "prompt": lambda b, c: f"I need a {c} solution for my company. What are the best options right now and why?"
-    },
-    {
-        "id": 3,
-        "label": "Brand knowledge",
-        "prompt": lambda b, c: f"Tell me about {b}. What do they do, what is their core product, and who is it for?"
-    },
-    {
-        "id": 4,
-        "label": "Competitive landscape",
-        "prompt": lambda b, c: f"Who are the main players in the {c} market today? Give me a quick rundown."
-    },
-    {
-        "id": 5,
-        "label": "Best-in-class search",
-        "prompt": lambda b, c: f"What is the best {c} tool right now? Give me your honest recommendation."
-    },
-    {
-        "id": 6,
-        "label": "Vendor comparison",
-        "prompt": lambda b, c: f"How does {b} compare to its main competitors in {c}? What are the key tradeoffs?"
-    },
-]
+st.set_page_config(page_title="Brand LLM Visibility", page_icon="◉", layout="wide")
+st.markdown(CSS, unsafe_allow_html=True)
 
 
-def call_gemini(api_key: str, prompt: str, system: str = None) -> str:
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        config=types.GenerateContentConfig(
-            system_instruction=system or "You are a helpful AI assistant. Answer questions naturally and concisely."
-        ),
-        contents=prompt
+# ── Sidebar — all inputs ───────────────────────────────────────────────────────
+
+with st.sidebar:
+    st.markdown(
+        '<div class="sidebar-logo">'
+        '<span class="sidebar-logo-dot">◉</span>'
+        '<span class="sidebar-logo-text">LLM Visibility</span>'
+        '</div>',
+        unsafe_allow_html=True,
     )
-    return response.text
 
+    st.markdown('<div class="sidebar-section-label">Brand</div>', unsafe_allow_html=True)
+    preset = st.selectbox("Quick-pick", options=list(PRESET_BRANDS.keys()), label_visibility="collapsed")
+    brand = st.text_input("Brand name", value=PRESET_BRANDS[preset]["brand"], placeholder="e.g. Notion")
+    category = st.text_input(
+        "Category",
+        value=PRESET_BRANDS[preset]["category"],
+        placeholder="e.g. productivity software",
+        help="The product space your brand competes in — e.g. CRM, note-taking, AI search.",
+    )
 
-def analyze_mention(text: str, brand: str) -> dict:
-    if not text:
-        return {"mentioned": False, "position": None, "snippet": ""}
+    st.markdown('<div class="sidebar-section-label" style="margin-top:20px">Model</div>', unsafe_allow_html=True)
+    primary_options = {
+        pk: f"{PROVIDERS[pk]['label']}"
+        for pk in PRIMARY_PROVIDERS
+    }
+    primary_provider_key = st.selectbox(
+        "Primary provider",
+        options=list(primary_options.keys()),
+        format_func=lambda k: primary_options[k],
+        label_visibility="collapsed",
+    )
+    primary_provider = PROVIDERS[primary_provider_key]
+    primary_model_options = primary_provider["models"]
+    selected_model = st.selectbox(
+        "Model variant",
+        options=list(primary_model_options.keys()),
+        format_func=lambda k: primary_model_options[k],
+        help="Higher quality models give more nuanced results. Default is fine for most audits.",
+    )
+    primary_api_key = st.text_input(
+        f"{primary_provider['label']} API key",
+        type="password",
+        placeholder=primary_provider["key_hint"],
+    )
 
-    lower = text.lower()
-    b_lower = brand.lower()
-    mentioned = b_lower in lower
+    with st.expander("Add more models — optional"):
+        st.markdown(
+            '<p style="font-size:11px;color:#52525b;margin-bottom:12px;font-family:Inter,sans-serif">'
+            "Compare visibility across ChatGPT, Perplexity, Claude."
+            "</p>",
+            unsafe_allow_html=True,
+        )
+        extra_keys: dict[str, tuple[str, str]] = {}
+        for pk in OPTIONAL_PROVIDERS:
+            p = PROVIDERS[pk]
+            k = st.text_input(
+                f"{p['label']}",
+                type="password",
+                placeholder=p["key_hint"],
+                key=f"key_{pk}",
+            )
+            m = st.selectbox(
+                "Model",
+                options=list(p["models"].keys()),
+                format_func=lambda x, p=p: p["models"][x],
+                key=f"model_{pk}",
+                label_visibility="collapsed",
+            )
+            if k:
+                extra_keys[pk] = (k, m)
 
-    position = None
-    snippet = ""
+    st.markdown('<div class="sidebar-section-label" style="margin-top:20px">Competitors</div>', unsafe_allow_html=True)
+    competitors_input = []
+    for i in range(3):
+        c = st.text_input(f"Competitor {i+1}", placeholder="e.g. Notion", key=f"comp_{i}", label_visibility="collapsed")
+        if c.strip():
+            competitors_input.append(c.strip())
 
-    if mentioned:
-        esc = re.escape(brand)
-        m = re.search(r'(\d+)[.)]\s[^\n]{0,80}?' + esc, text, re.IGNORECASE)
-        if m:
-            position = int(m.group(1))
+    st.markdown("<br>", unsafe_allow_html=True)
+    run = st.button("Run audit", use_container_width=True)
 
-        idx = lower.index(b_lower)
-        start = max(0, idx - 60)
-        end = min(len(text), idx + len(brand) + 140)
-        snippet = ("..." if start > 0 else "") + text[start:end].strip() + ("..." if end < len(text) else "")
-
-    return {"mentioned": mentioned, "position": position, "snippet": snippet}
-
-
-def render_section_label(text):
-    st.markdown(f'<p class="section-label">{text}</p>', unsafe_allow_html=True)
-
-
-def render_result_card(scenario_label, mentioned, position, snippet):
-    card_class = "result-card result-card-hit" if mentioned else "result-card result-card-miss"
-
-    if mentioned:
-        if position:
-            tag = f'<span class="tag-yes">Mentioned &mdash; #{position} in list</span>'
-        else:
-            tag = '<span class="tag-pos">Mentioned &mdash; no list rank</span>'
-    else:
-        tag = '<span class="tag-no">Not mentioned</span>'
-
-    if snippet:
-        body = f'<div class="snippet">"{snippet}"</div>'
-    else:
-        body = '<p style="font-family: JetBrains Mono, monospace; font-size:12px; color:#444; font-style:italic; margin:0">Brand not found in response.</p>'
-
-    st.markdown(f"""
-    <div class="{card_class}">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px">
-            <span style="font-size:13px; font-weight:500; color:#e8e8e8">{scenario_label}</span>
-            {tag}
-        </div>
-        {body}
+    st.markdown("""
+    <div class="sidebar-footer">
+        Built by
+        <a href="https://aarushsharmaa.github.io/aarush-sharma/" target="_blank" class="sidebar-footer-link">Aarush Sharma</a>
     </div>
     """, unsafe_allow_html=True)
 
 
-# Header
-st.markdown("## Brand LLM visibility audit")
-st.markdown('<p style="font-family: JetBrains Mono, monospace; font-size:13px; color:#666; margin-bottom:28px">6 discovery scenarios. See how Gemini talks about your brand.</p>', unsafe_allow_html=True)
+# ── Main content ───────────────────────────────────────────────────────────────
 
-# API Key
-api_key = st.text_input("Gemini API key", type="password", placeholder="AIza... (your key stays in this session only)")
+if not run:
+    # Empty state
+    st.markdown("""
+    <div class="empty-state">
+        <div class="empty-state-icon">◉</div>
+        <h2 class="empty-state-title">Brand LLM Visibility Audit</h2>
+        <p class="empty-state-sub">
+            See how your brand appears across AI models — ChatGPT, Gemini, Perplexity, and more. Configure your brand and API key in the sidebar, then run the audit.
+        </p>
+        <div class="empty-state-pills">
+            <span class="empty-pill">Visibility score</span>
+            <span class="empty-pill">Position tracking</span>
+            <span class="empty-pill">Sentiment analysis</span>
+            <span class="empty-pill">Adaptive probe agent</span>
+            <span class="empty-pill">Competitor share of voice</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
 
-st.markdown("<br>", unsafe_allow_html=True)
 
-# Brand picker
-preset = st.selectbox("Quick-pick a brand", options=list(PRESET_BRANDS.keys()))
+# ── Validate ───────────────────────────────────────────────────────────────────
 
-col1, col2 = st.columns(2)
-with col1:
-    brand_default = PRESET_BRANDS[preset]["brand"]
-    brand = st.text_input("Brand name", value=brand_default, placeholder="e.g. Notion")
-with col2:
-    cat_default = PRESET_BRANDS[preset]["category"]
-    category = st.text_input("Category", value=cat_default, placeholder="e.g. productivity software")
+if not primary_api_key:
+    st.error(f"Paste your {primary_provider['label']} API key in the sidebar to run the audit.")
+    st.stop()
+if not brand or not category:
+    st.error("Fill in brand name and category in the sidebar.")
+    st.stop()
 
-st.markdown("<br>", unsafe_allow_html=True)
-run = st.button("Run audit")
+# ── Run audit ──────────────────────────────────────────────────────────────────
 
-if run:
-    if not api_key:
-        st.error("Paste your Gemini API key above to run the audit.")
-    elif not brand or not category:
-        st.error("Fill in both brand name and category.")
+active_models: dict[str, tuple[str, str]] = {primary_provider_key: (primary_api_key, selected_model)}
+active_models.update(extra_keys)
+multi = len(active_models) > 1
+
+# Context bar
+st.markdown(
+    f'<div class="context-bar">'
+    f'<span class="context-brand">{brand}</span>'
+    f'<span class="context-sep">/</span>'
+    f'<span class="context-category">{category}</span>'
+    f'<span class="context-sep">·</span>'
+    f'<span class="context-models">{len(active_models)} model{"s" if multi else ""} · {len(SCENARIOS)} scenarios</span>'
+    f'</div>',
+    unsafe_allow_html=True,
+)
+
+# Progress tracking
+results_by_provider: dict[str, list[dict]] = {}
+probe_by_provider: dict[str, tuple[list[dict], str]] = {}
+progress = st.empty()
+
+
+def render_progress(current_provider: str, current_scenario_idx: int, done: list[str]):
+    lines = []
+    for pk in active_models:
+        label = PROVIDERS[pk]["label"]
+        if pk in done:
+            lines.append(f'<span style="font-size:12px;color:#16a34a;font-family:Inter,sans-serif;margin-right:16px">✓ {label}</span>')
+        elif pk == current_provider:
+            s_label = SCENARIOS[current_scenario_idx]["label"] if current_scenario_idx < len(SCENARIOS) else "probing..."
+            lines.append(f'<span style="font-size:12px;color:#d97706;font-family:Inter,sans-serif;margin-right:16px">⟳ {label} — {s_label}</span>')
+        else:
+            lines.append(f'<span style="font-size:12px;color:#cbd5e1;font-family:Inter,sans-serif;margin-right:16px">◌ {label}</span>')
+    progress.markdown(
+        f'<div style="padding:12px 0;border-bottom:1px solid #e2e8f0;margin-bottom:20px">{"".join(lines)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+done_providers: list[str] = []
+error_occurred = False
+
+for pk, (api_key_val, model_name) in active_models.items():
+    provider_results: list[dict] = []
+
+    for idx, scenario in enumerate(SCENARIOS):
+        render_progress(pk, idx, done_providers)
+        try:
+            prompt = scenario["prompt"](brand, category)
+            response_text = call_llm(pk, model_name, api_key_val, prompt)
+            analysis = detect_mention(response_text, brand)
+            provider_results.append({
+                "scenario_id": scenario["id"],
+                "label": scenario["label"],
+                "prompt_used": prompt,
+                "response": response_text,
+                "mentioned": analysis["mentioned"],
+                "position": analysis["position"],
+                "snippet": analysis["snippet"],
+                "sentiment": None,
+                "claims": [],
+                "is_probe": False,
+            })
+        except Exception as e:
+            st.error(f"{PROVIDERS[pk]['label']} / {scenario['label']}: {e}")
+            error_occurred = True
+            break
+        time.sleep(0.15)
+
+    if error_occurred:
+        break
+
+    try:
+        provider_results = enrich_with_claims(pk, model_name, api_key_val, brand, provider_results)
+    except Exception:
+        pass
+
+    results_by_provider[pk] = provider_results
+
+    render_progress(pk, len(SCENARIOS), done_providers)
+    if pk == primary_provider_key:
+        try:
+            probe_agent = ProbeAgent(pk, model_name, api_key_val)
+            probe_results, probe_rationale = probe_agent.run(brand, category, provider_results)
+            probe_by_provider[pk] = (probe_results, probe_rationale)
+        except Exception:
+            probe_by_provider[pk] = ([], "")
     else:
-        st.markdown("---")
-        render_section_label("Running scenarios")
+        probe_by_provider[pk] = ([], "")
 
-        progress_placeholder = st.empty()
-        results = []
+    done_providers.append(pk)
+    render_progress(None, 0, done_providers)
 
-        def render_progress(current_id, done_ids):
-            lines = []
-            for s in SCENARIOS:
-                if s["id"] in done_ids:
-                    lines.append(f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><div style="width:7px;height:7px;border-radius:50%;background:#a3e635;flex-shrink:0"></div><span style="font-family:JetBrains Mono,monospace;font-size:12px;color:#a3e635">{s["label"]}</span></div>')
-                elif s["id"] == current_id:
-                    lines.append(f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><div style="width:7px;height:7px;border-radius:50%;background:#fbbf24;flex-shrink:0"></div><span style="font-family:JetBrains Mono,monospace;font-size:12px;color:#fbbf24">{s["label"]} &mdash; running...</span></div>')
-                else:
-                    lines.append(f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><div style="width:7px;height:7px;border-radius:50%;background:#2e2e2e;flex-shrink:0"></div><span style="font-family:JetBrains Mono,monospace;font-size:12px;color:#555">{s["label"]}</span></div>')
-            progress_placeholder.markdown("".join(lines), unsafe_allow_html=True)
+if error_occurred or not results_by_provider:
+    st.stop()
 
-        done_ids = []
-        error_occurred = False
+progress.empty()
 
-        for scenario in SCENARIOS:
-            render_progress(scenario["id"], done_ids)
-            try:
-                prompt = scenario["prompt"](brand, category)
-                response_text = call_gemini(api_key, prompt)
-                analysis = analyze_mention(response_text, brand)
-                results.append({
-                    "label": scenario["label"],
-                    "mentioned": analysis["mentioned"],
-                    "position": analysis["position"],
-                    "snippet": analysis["snippet"],
-                    "response": response_text
-                })
-            except Exception as e:
-                st.error(f"Error on '{scenario['label']}': {str(e)}")
-                error_occurred = True
-                break
-            done_ids.append(scenario["id"])
-            time.sleep(0.3)
+# ── Compute summary stats ─────────────────────────────────────────────────────
 
-        render_progress(None, done_ids)
+pk_primary = primary_provider_key
+primary_results = results_by_provider[pk_primary]
+probe_results, probe_rationale = probe_by_provider.get(pk_primary, ([], ""))
+all_primary = primary_results + probe_results
+mc = sum(1 for r in all_primary if r["mentioned"])
+total = len(all_primary)
+positions = [r["position"] for r in all_primary if r.get("position") is not None]
+avg_pos = round(sum(positions) / len(positions), 1) if positions else None
+score = round((mc / total) * 100) if total else 0
 
-        if not error_occurred and results:
-            mention_count = sum(1 for r in results if r["mentioned"])
-            score = round((mention_count / len(results)) * 100)
-            positioned = [r["position"] for r in results if r["position"] is not None]
-            avg_pos = round(sum(positioned) / len(positioned), 1) if positioned else None
+sentiments = [r.get("sentiment") for r in all_primary if r.get("mentioned") and r.get("sentiment")]
+pos_count = sentiments.count("positive")
+neg_count = sentiments.count("negative")
+dominant_sentiment = "positive" if pos_count > neg_count else ("negative" if neg_count > pos_count else "neutral")
 
-            score_color = "#a3e635" if score >= 67 else "#fbbf24" if score >= 34 else "#f87171"
+# ── Tabs — Peec AI section structure ─────────────────────────────────────────
 
-            st.markdown("---")
-            render_section_label("Summary")
+tab_labels = ["Overview", "Scenarios", "Diagnosis"]
+if competitors_input:
+    tab_labels.append("Competitors")
+if multi:
+    tab_labels.insert(1, "Model comparison")
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-val" style="color:{score_color}">{score}%</div>
-                    <div class="metric-lbl">Visibility score</div>
-                </div>""", unsafe_allow_html=True)
-            with c2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-val">{mention_count} / {len(results)}</div>
-                    <div class="metric-lbl">Scenarios mentioned</div>
-                </div>""", unsafe_allow_html=True)
-            with c3:
-                pos_display = f"#{avg_pos}" if avg_pos else "N/A"
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-val">{pos_display}</div>
-                    <div class="metric-lbl">Avg list position</div>
-                </div>""", unsafe_allow_html=True)
+tabs = st.tabs(tab_labels)
+tab_map = {label: tab for label, tab in zip(tab_labels, tabs)}
 
-            st.markdown("---")
-            render_section_label("Scenario breakdown")
 
-            for r in results:
-                render_result_card(r["label"], r["mentioned"], r["position"], r["snippet"])
+# ── Tab: Overview ─────────────────────────────────────────────────────────────
 
-            st.markdown("---")
-            render_section_label("GEO diagnosis")
+with tab_map["Overview"]:
+    st.markdown("<br>", unsafe_allow_html=True)
 
-            with st.spinner("Generating diagnosis..."):
-                snippets = "\n\n".join(
-                    f"[{r['label']}]: {r['snippet']}"
-                    for r in results if r["mentioned"] and r["snippet"]
-                )
-                synth_prompt = f"""You are a GEO (Generative Engine Optimization) analyst.
+    if multi:
+        model_audit_data = []
+        for pk, results in results_by_provider.items():
+            probe_r, _ = probe_by_provider.get(pk, ([], ""))
+            all_r = results + probe_r
+            mc_p = sum(1 for r in all_r if r.get("mentioned"))
+            total_p = len(all_r)
+            pos_p = [r["position"] for r in all_r if r.get("position") is not None]
+            avg_p = round(sum(pos_p) / len(pos_p), 1) if pos_p else None
+            model_audit_data.append({
+                "provider": pk,
+                "model_name": active_models[pk][1],
+                "score": round((mc_p / total_p) * 100) if total_p else 0,
+                "mention_count": mc_p,
+                "total": total_p,
+                "avg_position": avg_p,
+            })
+        render_metric_cards(score, mc, total, avg_pos)
+        st.markdown("<br>", unsafe_allow_html=True)
+        section_label("Across models")
+        render_model_table(model_audit_data)
+    else:
+        render_metric_cards(score, mc, total, avg_pos)
 
-Brand: {brand}
-Category: {category}
-Mentioned in {mention_count} out of {len(results)} Gemini responses across different user query types.
+    if probe_rationale or probe_results:
+        st.markdown("<br>", unsafe_allow_html=True)
+        section_label("Probe agent")
+        render_probe_box(probe_rationale, len(probe_results))
 
-Mentions found:
-{snippets if snippets else "(Brand was not mentioned in any response)"}
 
-Write a short GEO diagnosis. Three paragraphs:
-1. Current LLM visibility status. Be honest and direct.
-2. The most likely root cause of the gap (or strength, if visibility is high).
-3. One specific, actionable thing to improve LLM presence.
+# ── Tab: Model comparison (multi only) ───────────────────────────────────────
 
-No bullet points. No filler phrases. No "Furthermore" or "Moreover". Write like a consultant who respects the reader's time."""
+if multi and "Model comparison" in tab_map:
+    with tab_map["Model comparison"]:
+        st.markdown("<br>", unsafe_allow_html=True)
+        render_model_table(model_audit_data)
 
-                try:
-                    diagnosis = call_gemini(
-                        api_key,
-                        synth_prompt,
-                        system="You are a direct, no-nonsense GEO analyst. Plain English only. Short sentences. Be specific."
-                    )
-                    st.markdown(f'<div class="geo-box">{diagnosis}</div>', unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"Could not generate diagnosis: {str(e)}")
 
-        st.markdown('<p class="footer-note">Prototype by Aarush Sharma &mdash; demonstrating GEO audit thinking</p>', unsafe_allow_html=True)
+# ── Tab: Scenarios ────────────────────────────────────────────────────────────
+
+with tab_map["Scenarios"]:
+    st.markdown("<br>", unsafe_allow_html=True)
+    section_label(f"{len(SCENARIOS)} standard scenarios")
+    for idx, scenario in enumerate(SCENARIOS):
+        primary_r = primary_results[idx] if idx < len(primary_results) else {}
+        model_dots = None
+        if multi:
+            model_dots = [
+                (pk, results_by_provider[pk][idx].get("mentioned", False))
+                for pk in active_models
+                if idx < len(results_by_provider.get(pk, []))
+            ]
+        render_scenario_card(primary_r, model_dots=model_dots)
+
+    if probe_results:
+        st.markdown("<br>", unsafe_allow_html=True)
+        section_label("Follow-up probes — agent-selected")
+        for pr in probe_results:
+            render_scenario_card(pr)
+
+
+# ── Tab: Diagnosis ────────────────────────────────────────────────────────────
+
+with tab_map["Diagnosis"]:
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.spinner("Generating diagnosis..."):
+        try:
+            api_key_val, model_name = active_models[pk_primary]
+            diag_agent = DiagnosisAgent(pk_primary, model_name, api_key_val)
+            diagnosis = diag_agent.run(brand, category, results_by_provider, probe_by_provider)
+            render_diagnosis(diagnosis, multi_model=multi)
+        except Exception as e:
+            st.error(f"Could not generate diagnosis: {e}")
+
+
+# ── Tab: Competitors ──────────────────────────────────────────────────────────
+
+if competitors_input and "Competitors" in tab_map:
+    with tab_map["Competitors"]:
+        st.markdown("<br>", unsafe_allow_html=True)
+        all_responses = []
+        for pk, results in results_by_provider.items():
+            all_responses.extend(r.get("response", "") for r in results)
+            probe_r, _ = probe_by_provider.get(pk, ([], ""))
+            all_responses.extend(r.get("response", "") for r in probe_r)
+
+        total_responses = len(all_responses)
+        brand_mentions = count_competitor_mentions(all_responses, brand)
+        competitor_sovs = []
+        for comp_name in competitors_input:
+            mentions = count_competitor_mentions(all_responses, comp_name)
+            competitor_sovs.append(CompetitorSOV(
+                name=comp_name,
+                mentions=mentions,
+                total_responses=total_responses,
+            ))
+        render_sov_table(brand, brand_mentions, competitor_sovs, total_responses)

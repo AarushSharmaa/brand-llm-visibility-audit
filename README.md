@@ -1,23 +1,81 @@
 # Brand LLM Visibility Audit
 
-When someone asks ChatGPT or Perplexity "what's the best CRM right now?", the brands that show up win the click. Most companies have no idea where they stand. This tool gives them a clear answer in under 2 minutes.
+When someone asks ChatGPT "what's the best CRM?" — which brands show up, and how are they described? Most companies have no idea. This tool answers that question in under 2 minutes, across multiple AI models, with a confidence-scored action plan to fix what's broken.
+
+---
+
+## The problem
+
+AI models are becoming the first stop for purchase decisions. Unlike Google, there's no SEO playbook for LLM visibility — no keyword rankings, no backlink audits. Brands are flying blind.
+
+This tool gives product and marketing teams a structured read on where they stand, where they're invisible, and what to do about it.
+
+---
 
 ## What it does
 
-Runs 6 buyer-journey scenarios across one or more AI models, then tells you exactly where your brand appears, how it is framed, and what to fix.
+Runs 6 buyer-journey scenarios across one or more AI models, then produces:
 
-**Scenarios:** market discovery, tool recommendation, brand knowledge, competitive landscape, best-in-class search, vendor comparison.
+| Output | What it tells you |
+|---|---|
+| Visibility score | % of scenarios where your brand was mentioned |
+| List position | Where in the response your brand appeared (#1, #2, etc.) |
+| Sentiment + claims | How the model frames your brand — not just whether it mentions you |
+| Probe results | Follow-up queries chosen by an agent based on what it found |
+| Action plan | 2–3 prioritized actions with confidence scores and effort/impact ratings |
+| Competitor SOV | Share of voice across all responses, no extra API calls |
+| Cross-model diff | Why Gemini mentions you but ChatGPT doesn't |
 
-**Output:**
-- Visibility score per model (% of scenarios where brand is mentioned)
-- List position and response snippet per scenario
-- Sentiment tag and extracted claims per mention (what the LLM actually says about you)
-- Adaptive follow-up probes chosen by an agent based on your results
-- Confidence-scored action plan with effort and impact ratings
-- Competitor share of voice computed from existing responses (no extra API calls)
-- Cross-model disagreement analysis when multiple models are used
+**The 6 standard scenarios:** market discovery, tool recommendation, brand knowledge, competitive landscape, best-in-class search, vendor comparison. These map to real buyer-journey stages.
 
-## Providers supported
+---
+
+## Why it's agentic
+
+Most LLM audit tools run fixed prompts and count mentions. This one runs a planning loop.
+
+**Stage 1 — Standard audit:** 6 fixed scenarios, regex mention detection, batch enrichment call for sentiment and claims.
+
+**Stage 2 — Probe agent:** After reviewing the 6 results, an LLM orchestrator decides whether to run 1–3 targeted follow-up queries. It reasons about *what it found* before choosing what to ask next:
+- Invisible brand → probes alternate buyer phrasings
+- Negative sentiment → surfaces that framing specifically
+- High scorer → tests niche segments and edge cases
+- Mixed results → targets the specific gaps
+
+The probe queries are not templated. The agent writes them in natural language based on your brand and category.
+
+**Stage 3 — Diagnosis agent:** Produces a structured JSON diagnosis with per-action confidence scores (0–1). Actions under 0.6 are flagged as hypotheses. Multi-model runs get a cross-model disagreement note that names specific models and hypothesizes *why* they differ (training data, content gaps, category framing).
+
+---
+
+## Architecture
+
+```
+app.py              — Streamlit orchestrator: UI state, audit loop, tab routing
+core/
+  config.py         — Provider registry, scenario definitions, preset brands
+  models.py         — Pydantic types: ScenarioResult, ModelAudit, AuditDiagnosis
+llm/
+  client.py         — Unified call_llm() + call_json() for all providers
+agents/
+  analyzer.py       — Regex mention detection, batch claim/sentiment enrichment
+  probe_agent.py    — Agentic probe loop (LLM-driven follow-up decision)
+  diagnosis_agent.py — Structured GEO diagnosis (single + multi-model paths)
+ui/
+  styles.py         — Full CSS design system (light B2B theme)
+  components.py     — Reusable st.markdown() render functions
+tests/              — 93 unit tests, all mocked, no API calls required
+```
+
+**Design principles:**
+- `call_llm()` is the only place that touches provider SDKs — swap providers in one file
+- Agent outputs are Pydantic models — no raw dicts crossing module boundaries
+- `enrich_with_claims()` is one batch call per model run, not one call per scenario
+- UI components are pure render functions — no business logic in the display layer
+
+---
+
+## Providers
 
 | Provider | Free tier | Models |
 |---|---|---|
@@ -27,7 +85,9 @@ Runs 6 buyer-journey scenarios across one or more AI models, then tells you exac
 | Perplexity | No | Sonar, Sonar Pro |
 | Anthropic | No | Claude Haiku, Claude Sonnet |
 
-Only a Groq or Gemini key is required to run the full audit. Additional keys unlock multi-model comparison.
+Only a Groq or Gemini key is needed to run a full audit. Additional keys unlock multi-model comparison and cross-model diagnosis.
+
+---
 
 ## Running locally
 
@@ -38,19 +98,25 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Get a free Groq key at [console.groq.com](https://console.groq.com) or a free Gemini key at [aistudio.google.com](https://aistudio.google.com).
+Free keys: [console.groq.com](https://console.groq.com) · [aistudio.google.com](https://aistudio.google.com)
 
-## What makes it agentic
+**Run tests:**
+```bash
+pytest tests/ -v
+```
 
-The probe agent reviews the initial 6 results and decides whether to run targeted follow-up queries. The decision logic is LLM-driven, not hardcoded:
+No API keys needed for tests — all LLM calls are mocked.
 
-- Brand invisible (2/6 or fewer mentions): probe alternate category phrasings
-- Negative or cautious sentiment: surface that framing specifically
-- High score (5-6/6): test edge cases and niche segments
-- Mixed results: target the specific gaps
+---
 
-The diagnosis agent produces structured JSON output with per-action confidence scores (0 to 1). Actions under 0.6 are flagged as hypotheses.
+## Extending
 
-## Tech stack
+**Add a provider:** Add an entry to `PROVIDERS` in [core/config.py](core/config.py) and one `if provider == "..."` block in [llm/client.py](llm/client.py). Nothing else changes.
 
-Python, Streamlit, Pydantic, google-genai, groq, openai, anthropic SDKs.
+**Add a scenario:** Add a dict to `SCENARIOS` in [core/config.py](core/config.py) with `id`, `label`, and a `prompt` lambda. The audit loop picks it up automatically.
+
+**Change the diagnosis format:** Edit the prompt in [agents/diagnosis_agent.py](agents/diagnosis_agent.py). The `_parse()` method handles Pydantic validation and malformed outputs gracefully.
+
+---
+
+Built by [Aarush Sharma](https://aarushsharmaa.github.io/aarush-sharma/)
