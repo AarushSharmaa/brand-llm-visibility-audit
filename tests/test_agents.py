@@ -28,7 +28,7 @@ MODEL = "gemini-2.5-flash"
 KEY = "fake-key"
 
 
-# ── ProbeAgent ────────────────────────────────────────────────────────────────
+# ── ProbeAgent.decide ─────────────────────────────────────────────────────────
 
 class TestProbeAgentDecide:
 
@@ -64,18 +64,51 @@ class TestProbeAgentDecide:
             probes, rationale = agent.decide("HubSpot", "CRM", [_result("X", True)])
         assert probes == []
 
+    def test_decide_prompt_includes_brand(self):
+        with patch("agents.probe_agent.call_json", return_value={"probes": [], "rationale": ""}) as mock_cj:
+            agent = ProbeAgent(PROVIDER, MODEL, KEY)
+            agent.decide("HubSpot", "CRM", [_result("Market discovery", False)])
+        prompt = mock_cj.call_args[0][3]
+        assert "HubSpot" in prompt
+
+    def test_decide_prompt_includes_category(self):
+        with patch("agents.probe_agent.call_json", return_value={"probes": [], "rationale": ""}) as mock_cj:
+            agent = ProbeAgent(PROVIDER, MODEL, KEY)
+            agent.decide("HubSpot", "enterprise CRM software", [_result("Market discovery", False)])
+        prompt = mock_cj.call_args[0][3]
+        assert "enterprise CRM software" in prompt
+
+    def test_decide_prompt_includes_sentiment_in_results_summary(self):
+        """Sentiment must appear in the results summary so the agent can reason about it."""
+        results = [_result("Market discovery", True, sentiment="negative")]
+        with patch("agents.probe_agent.call_json", return_value={"probes": [], "rationale": ""}) as mock_cj:
+            agent = ProbeAgent(PROVIDER, MODEL, KEY)
+            agent.decide("HubSpot", "CRM", results)
+        prompt = mock_cj.call_args[0][3]
+        assert "negative" in prompt
+
+    def test_decide_returns_only_up_to_max_probes_constant(self):
+        """Verify the cap matches MAX_PROBES (3) — not hardcoded to a different value."""
+        from agents.probe_agent import MAX_PROBES
+        assert MAX_PROBES == 3
+        mock_response = {"probes": ["q1", "q2", "q3", "q4"], "rationale": "many gaps"}
+        with patch("agents.probe_agent.call_json", return_value=mock_response):
+            agent = ProbeAgent(PROVIDER, MODEL, KEY)
+            probes, _ = agent.decide("HubSpot", "CRM", [])
+        assert len(probes) == MAX_PROBES
+
+
+# ── ProbeAgent.run ────────────────────────────────────────────────────────────
 
 class TestProbeAgentRun:
 
     def test_run_returns_probe_results(self):
         decide_mock = {"probes": ["best CRM right now?"], "rationale": "testing alternate phrasing"}
         llm_response = "HubSpot is among the top CRM platforms available."
-
         with patch("agents.probe_agent.call_json", return_value=decide_mock), \
              patch("agents.probe_agent.call_llm", return_value=llm_response):
             agent = ProbeAgent(PROVIDER, MODEL, KEY)
             results, rationale = agent.run("HubSpot", "CRM", [_result("Market discovery", False)])
-
         assert len(results) == 1
         assert results[0]["is_probe"] is True
         assert results[0]["mentioned"] is True
@@ -94,13 +127,58 @@ class TestProbeAgentRun:
              patch("agents.probe_agent.call_llm", side_effect=Exception("API down")):
             agent = ProbeAgent(PROVIDER, MODEL, KEY)
             results, _ = agent.run("HubSpot", "CRM", [_result("X", False)])
-        # Should not raise — returns error result
         assert len(results) == 1
         assert results[0]["mentioned"] is False
         assert "error" in results[0]
 
+    def test_run_probe_label_truncated_at_90_chars(self):
+        long_probe = "a" * 120  # 120 chars
+        decide_mock = {"probes": [long_probe], "rationale": "testing"}
+        with patch("agents.probe_agent.call_json", return_value=decide_mock), \
+             patch("agents.probe_agent.call_llm", return_value="no mention here"):
+            agent = ProbeAgent(PROVIDER, MODEL, KEY)
+            results, _ = agent.run("HubSpot", "CRM", [])
+        # label is truncated to 90 + "…"
+        assert len(results[0]["label"]) <= 92  # 90 + "…" = 91 chars
 
-# ── DiagnosisAgent ────────────────────────────────────────────────────────────
+    def test_run_probe_error_label_truncated_at_70_chars(self):
+        long_probe = "b" * 100
+        decide_mock = {"probes": [long_probe], "rationale": "testing"}
+        with patch("agents.probe_agent.call_json", return_value=decide_mock), \
+             patch("agents.probe_agent.call_llm", side_effect=Exception("fail")):
+            agent = ProbeAgent(PROVIDER, MODEL, KEY)
+            results, _ = agent.run("HubSpot", "CRM", [])
+        assert len(results[0]["label"]) <= 72  # 70 + "…"
+
+    def test_run_probe_result_has_all_required_keys(self):
+        decide_mock = {"probes": ["query?"], "rationale": "r"}
+        with patch("agents.probe_agent.call_json", return_value=decide_mock), \
+             patch("agents.probe_agent.call_llm", return_value="HubSpot response"):
+            agent = ProbeAgent(PROVIDER, MODEL, KEY)
+            results, _ = agent.run("HubSpot", "CRM", [])
+        required = {"scenario_id", "label", "prompt_used", "response", "mentioned",
+                    "position", "snippet", "sentiment", "claims", "is_probe"}
+        assert required.issubset(results[0].keys())
+
+    def test_run_probe_scenario_ids_start_at_100(self):
+        decide_mock = {"probes": ["q1", "q2"], "rationale": "r"}
+        with patch("agents.probe_agent.call_json", return_value=decide_mock), \
+             patch("agents.probe_agent.call_llm", return_value="no mention"):
+            agent = ProbeAgent(PROVIDER, MODEL, KEY)
+            results, _ = agent.run("HubSpot", "CRM", [])
+        assert results[0]["scenario_id"] == 100
+        assert results[1]["scenario_id"] == 101
+
+    def test_run_multiple_probes_all_execute(self):
+        decide_mock = {"probes": ["q1", "q2", "q3"], "rationale": "3 gaps"}
+        with patch("agents.probe_agent.call_json", return_value=decide_mock), \
+             patch("agents.probe_agent.call_llm", return_value="no mention"):
+            agent = ProbeAgent(PROVIDER, MODEL, KEY)
+            results, _ = agent.run("HubSpot", "CRM", [])
+        assert len(results) == 3
+
+
+# ── DiagnosisAgent._parse ─────────────────────────────────────────────────────
 
 class TestDiagnosisAgentParse:
 
@@ -130,21 +208,28 @@ class TestDiagnosisAgentParse:
     def test_parse_clamps_confidence(self):
         raw = {
             "status_summary": "x", "root_cause": "y",
-            "actions": [{"action": "Do X", "confidence": 1.5}],  # out of range
+            "actions": [{"action": "Do X", "confidence": 1.5}],
         }
         diag = self.agent._parse(raw)
         assert diag.actions[0].confidence <= 1.0
+
+    def test_parse_confidence_clamped_at_zero(self):
+        raw = {
+            "status_summary": "x", "root_cause": "y",
+            "actions": [{"action": "Do X", "confidence": -0.5}],
+        }
+        diag = self.agent._parse(raw)
+        assert diag.actions[0].confidence >= 0.0
 
     def test_parse_skips_malformed_actions(self):
         raw = {
             "status_summary": "x", "root_cause": "y",
             "actions": [
                 {"action": "Good action", "confidence": 0.8},
-                {"action": "Bad action", "effort": "invalid_value"},  # invalid Literal
+                {"action": "Bad action", "effort": "invalid_value"},
             ],
         }
         diag = self.agent._parse(raw)
-        # Malformed action should be skipped, good one retained
         assert len(diag.actions) >= 1
 
     def test_parse_cross_model_note(self):
@@ -156,6 +241,25 @@ class TestDiagnosisAgentParse:
         diag = self.agent._parse(raw)
         assert diag.cross_model_note is not None
 
+    def test_parse_missing_actions_key_returns_empty_list(self):
+        raw = {"status_summary": "OK", "root_cause": "gaps"}
+        # No "actions" key at all
+        diag = self.agent._parse(raw)
+        assert isinstance(diag, AuditDiagnosis)
+        assert diag.actions == []
+
+    def test_parse_empty_actions_list(self):
+        raw = {"status_summary": "x", "root_cause": "y", "actions": []}
+        diag = self.agent._parse(raw)
+        assert diag.actions == []
+
+    def test_parse_cross_model_note_none_by_default(self):
+        raw = {"status_summary": "x", "root_cause": "y", "actions": []}
+        diag = self.agent._parse(raw)
+        assert diag.cross_model_note is None
+
+
+# ── DiagnosisAgent._results_text ──────────────────────────────────────────────
 
 class TestDiagnosisAgentResultsText:
 
@@ -185,6 +289,21 @@ class TestDiagnosisAgentResultsText:
         text = self.agent._results_text(results, probes)
         assert "Probe follow-ups" in text
 
+    def test_results_text_with_claims(self):
+        r = _result("Market discovery", True)
+        r["claims"] = ["affordable", "easy setup"]
+        text = self.agent._results_text([r])
+        assert "affordable" in text
+        assert "easy setup" in text
+
+    def test_results_text_no_sentiment_no_extra_text(self):
+        """If no sentiment, the extras string should be empty — no orphan commas."""
+        results = [_result("Market discovery", True, sentiment=None)]
+        text = self.agent._results_text(results)
+        assert "sentiment=" not in text
+
+
+# ── DiagnosisAgent.run ────────────────────────────────────────────────────────
 
 class TestDiagnosisAgentRun:
 
@@ -218,3 +337,34 @@ class TestDiagnosisAgentRun:
             probe_by_provider = {"gemini": ([], ""), "openai": ([], "")}
             diag = agent.run("HubSpot", "CRM", results_by_provider, probe_by_provider)
         assert diag.cross_model_note is not None
+
+    def test_multi_model_prompt_contains_disagreement_block(self):
+        """Multi-model prompt must highlight where models disagree — that's the key insight."""
+        mock_diag = {"status_summary": "x", "root_cause": "y", "actions": []}
+        with patch("agents.diagnosis_agent.call_json", return_value=mock_diag) as mock_cj:
+            agent = DiagnosisAgent(PROVIDER, MODEL, KEY)
+            # Gemini mentions brand, OpenAI does not — disagreement on "Market discovery"
+            results_by_provider = {
+                "gemini": [_result("Market discovery", True)],
+                "openai": [_result("Market discovery", False)],
+            }
+            probe_by_provider = {"gemini": ([], ""), "openai": ([], "")}
+            agent.run("HubSpot", "CRM", results_by_provider, probe_by_provider)
+        prompt = mock_cj.call_args[0][3]
+        assert "Market discovery" in prompt
+        assert "disagree" in prompt.lower() or "✓" in prompt or "✗" in prompt
+
+    def test_multi_model_no_disagreements_included_in_prompt(self):
+        """When all models agree, the prompt should note that too."""
+        mock_diag = {"status_summary": "x", "root_cause": "y", "actions": []}
+        with patch("agents.diagnosis_agent.call_json", return_value=mock_diag) as mock_cj:
+            agent = DiagnosisAgent(PROVIDER, MODEL, KEY)
+            # Both models agree: mentioned
+            results_by_provider = {
+                "gemini": [_result("Market discovery", True)],
+                "openai": [_result("Market discovery", True)],
+            }
+            probe_by_provider = {"gemini": ([], ""), "openai": ([], "")}
+            agent.run("HubSpot", "CRM", results_by_provider, probe_by_provider)
+        prompt = mock_cj.call_args[0][3]
+        assert "agree" in prompt.lower()

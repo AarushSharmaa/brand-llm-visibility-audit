@@ -55,7 +55,7 @@ def call_llm(provider: str, model_name: str, api_key: str, prompt: str, system: 
         client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
             model=model_name,
-            max_tokens=1024,
+            max_tokens=2048,
             system=system,
             messages=[{"role": "user", "content": prompt}],
         )
